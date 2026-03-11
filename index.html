@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self' https://script.google.com; style-src 'unsafe-inline'; script-src 'unsafe-inline';">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' https://script.google.com https://script.googleusercontent.com; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src https://script.google.com https://script.googleusercontent.com;">
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>QR Attendance Logger</title>
   <style>
@@ -152,18 +152,23 @@
   setTimeout(fetchSessionToken, 500);
 
   function fetchSessionToken() {
+    // Show connecting state on timer
+    document.getElementById("tokenTimer").textContent = "⏱️ Connecting to server…";
+
     postToScript({ action: "token", qrId: qrId })
       .then(function(data) {
+        console.log("Token response:", JSON.stringify(data));
         if (data.status === "ok") {
           sessionToken   = data.token;
           tokenExpiresAt = new Date(data.expiresAt);
           startTokenTimer();
         } else {
-          showSessionExpired("❌ " + (data.message || "Invalid QR code. Please scan a valid QR code."));
+          showSessionExpired("❌ Server error: " + (data.message || "Unknown error") + "\n\nQR ID received: " + qrId);
         }
       })
       .catch(function(err) {
-        showSessionExpired("❌ Could not connect to server. Please check your connection.");
+        console.error("Token fetch error:", err);
+        showSessionExpired("❌ Network error: " + err.message + "\n\nQR ID: " + qrId + "\nURL: " + APPS_SCRIPT_URL.substring(0, 60) + "…");
       });
   }
 
