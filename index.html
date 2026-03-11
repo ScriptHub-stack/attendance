@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' https://script.google.com; style-src 'unsafe-inline'; script-src 'unsafe-inline';">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>QR Attendance Logger</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+      min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px;
+    }
+    .card {
+      background: white; border-radius: 24px; padding: 36px 28px;
+      max-width: 420px; width: 100%; box-shadow: 0 30px 60px rgba(0,0,0,0.4); text-align: center;
+    }
+    .logo {
+      width: 72px; height: 72px; background: linear-gradient(135deg, #667eea, #764ba2);
+      border-radius: 18px; margin: 0 auto 20px; display: flex; align-items: center; justify-content: center; font-size: 32px;
+    }
+    h1 { font-size: 22px; font-weight: 700; color: #1a1a2e; margin-bottom: 6px; }
+    .subtitle { font-size: 14px; color: #888; margin-bottom: 24px; }
+
+    .name-section { margin-bottom: 16px; text-align: left; }
+    .name-section label { font-size: 12px; font-weight: 700; color: #555; text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 7px; }
+    .name-input {
+      width: 100%; padding: 14px 16px; border: 2px solid #e0e0f0;
+      border-radius: 12px; font-size: 15px; font-weight: 500; color: #1a1a2e;
+      outline: none; transition: border-color .2s;
+    }
+    .name-input:focus { border-color: #667eea; }
+    .name-input::placeholder { color: #bbb; font-weight: 400; }
+
+    .info-row {
+      display: flex; align-items: flex-start; background: #f8f9ff; border-radius: 12px;
+      padding: 14px 16px; margin-bottom: 10px; text-align: left; gap: 12px;
+    }
+    .info-icon { font-size: 20px; flex-shrink: 0; margin-top: 2px; }
+    .info-label { font-size: 11px; font-weight: 600; color: #999; text-transform: uppercase; letter-spacing: 0.5px; }
+    .info-value { font-size: 13px; font-weight: 500; color: #1a1a2e; margin-top: 3px; word-break: break-all; }
+
+    .badge { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 20px; margin-top: 3px; }
+    .badge-yellow { background: #fff3cd; color: #856404; }
+    .badge-green  { background: #d1fae5; color: #065f46; }
+    .badge-red    { background: #fee2e2; color: #991b1b; }
+    .badge-blue   { background: #dbeafe; color: #1e40af; }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; animation: pulse 1.2s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+    .btn { width: 100%; padding: 16px; border: none; border-radius: 14px; font-size: 16px; font-weight: 700; cursor: pointer; margin-top: 18px; transition: all .2s; }
+    .btn-primary { background: linear-gradient(135deg, #667eea, #764ba2); color: white; box-shadow: 0 8px 20px rgba(102,126,234,.4); }
+    .btn-primary:hover:not(:disabled) { transform: translateY(-2px); }
+    .btn:disabled { opacity: .55; cursor: not-allowed; }
+
+    .result-box { margin-top: 16px; padding: 16px; border-radius: 12px; font-size: 13px; font-weight: 500; text-align: left; display: none; line-height: 1.7; white-space: pre-line; }
+    .result-box.success { background: #d1fae5; color: #065f46; display: block; }
+    .result-box.error   { background: #fee2e2; color: #991b1b; display: block; }
+    .result-box.warning { background: #fff3cd; color: #856404; display: block; }
+
+    .qr-badge { display: inline-block; margin-bottom: 18px; background: linear-gradient(135deg,#667eea22,#764ba222); border: 1.5px solid #667eea55; border-radius: 10px; padding: 7px 14px; font-size: 13px; font-weight: 700; color: #4c3d8f; }
+    .spinner { display: inline-block; width: 15px; height: 15px; border: 2.5px solid #ffffff55; border-top-color: white; border-radius: 50%; animation: spin .7s linear infinite; vertical-align: middle; margin-right: 7px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #hiddenFrame { display: none; }
+    footer { margin-top: 20px; font-size: 11px; color: #bbb; }
+  </style>
+</head>
+<body>
+
+<iframe id="hiddenFrame" name="hiddenFrame"></iframe>
+
+<div class="card">
+  <div class="logo">📍</div>
+  <h1>QR Attendance Check-In</h1>
+  <p class="subtitle">Fill in your name and submit to log attendance</p>
+
+  <div class="qr-badge">🔗 QR ID: <span id="qrIdText">—</span></div>
+
+  <div id="tokenTimer" style="
+    display: inline-block; margin-bottom: 16px;
+    border: 1.5px solid #065f46; border-radius: 10px;
+    padding: 6px 14px; font-size: 12px; font-weight: 700;
+    color: #065f46; background: #d1fae5;
+  ">⏱️ Loading session…</div>
+
+  <!-- Name Input -->
+  <div class="name-section">
+    <label for="nameInput">👤 Your Full Name *</label>
+    <input type="text" id="nameInput" class="name-input"
+           placeholder="e.g. Ahmed Al Mansoori"
+           autocomplete="name" autocapitalize="words" maxlength="80" />
+  </div>
+
+  <div class="info-row">
+    <span class="info-icon">🕐</span>
+    <div>
+      <div class="info-label">Timestamp</div>
+      <div class="info-value" id="tsVal">—</div>
+    </div>
+  </div>
+
+  <div class="info-row">
+    <span class="info-icon">📡</span>
+    <div>
+      <div class="info-label">Location (GPS)</div>
+      <div class="info-value" id="locVal">
+        <span class="badge badge-yellow"><span class="dot"></span> Requesting GPS…</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="info-row">
+    <span class="info-icon">📱</span>
+    <div>
+      <div class="info-label">Device</div>
+      <div class="info-value" id="devVal">—</div>
+    </div>
+  </div>
+
+  <button class="btn btn-primary" id="submitBtn" disabled onclick="submitAttendance()">
+    ⏳ Waiting for GPS…
+  </button>
+
+  <div class="result-box" id="resultBox"></div>
+  <footer>Powered by Google Sheets + Apps Script</footer>
+</div>
+
+<script>
+  // ══════════════════════════════════════════════════════════════
+  //  🔴 Replace with your Google Apps Script Web App URL
+  // ══════════════════════════════════════════════════════════════
+  const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxHrPVknMiaoc04vQIiRIvY6vFDhmKpVi4ym0USx21c9PusdyPkhbRMNLbsiDNU63NaGg/exec";
+  // ══════════════════════════════════════════════════════════════
+
+  const params = new URLSearchParams(window.location.search);
+  const qrId   = params.get("id") || "NO-ID";
+  const now    = new Date();
+  let lat = null, lng = null;
+  let gpsReady = false;
+  let sessionToken = null;       // issued by server on page load
+  let tokenExpiresAt = null;     // Date object
+  let tokenTimerInterval = null; // countdown timer
+
+  document.getElementById("qrIdText").textContent = qrId;
+  document.getElementById("tsVal").textContent =
+    now.toLocaleString("en-US", { dateStyle: "medium", timeStyle: "medium" });
+  document.getElementById("devVal").textContent =
+    navigator.userAgent.substring(0, 80) + "…";
+
+  // ── Fetch session token immediately on page load ──────────
+  fetchSessionToken();
+
+  function fetchSessionToken() {
+    // Use POST — GET parameters get stripped by Google's redirect
+    const fd = new FormData();
+    fd.append("action", "token");
+    fd.append("qrId",   qrId);
+
+    fetch(APPS_SCRIPT_URL, { method: "POST", body: fd })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (data.status === "ok") {
+          sessionToken   = data.token;
+          tokenExpiresAt = new Date(data.expiresAt);
+          startTokenTimer();
+        } else {
+          showSessionExpired("❌ " + (data.message || "Invalid QR code. Please scan a valid QR code."));
+        }
+      })
+      .catch(function() {
+        showSessionExpired("❌ Could not connect to server. Please check your connection.");
+      });
+  }
+
+  function startTokenTimer() {
+    const timerEl = document.getElementById("tokenTimer");
+    if (tokenTimerInterval) clearInterval(tokenTimerInterval);
+
+    tokenTimerInterval = setInterval(function() {
+      const remaining = Math.max(0, tokenExpiresAt - new Date());
+      const mins = Math.floor(remaining / 60000);
+      const secs = Math.floor((remaining % 60000) / 1000);
+
+      if (remaining <= 0) {
+        clearInterval(tokenTimerInterval);
+        sessionToken = null;
+        showSessionExpired("⏱️ Session expired. Please scan the QR code again to check in.");
+        return;
+      }
+
+      // Change colour as time runs low
+      const colour = remaining < 60000 ? "#ef4444" : remaining < 180000 ? "#f59e0b" : "#065f46";
+      timerEl.style.color = colour;
+      timerEl.style.borderColor = colour;
+      timerEl.textContent = "⏱️ Session expires in " + mins + ":" + (secs < 10 ? "0" : "") + secs;
+    }, 1000);
+  }
+
+  function showSessionExpired(msg) {
+    // Disable submit button and show expired message
+    const btn = document.getElementById("submitBtn");
+    btn.disabled = true;
+    btn.textContent = "🔒 Session Expired";
+    btn.style.background = "#9ca3af";
+    btn.style.boxShadow  = "none";
+    showResult("error", msg);
+    // Hide timer
+    document.getElementById("tokenTimer").style.display = "none";
+  }
+
+  // GPS — fast single reading
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        lat = pos.coords.latitude.toFixed(6);
+        lng = pos.coords.longitude.toFixed(6);
+        const b1 = document.createElement("span");
+        b1.className = "badge badge-green";
+        b1.textContent = "✅ " + lat + ", " + lng;
+        const lv = document.getElementById("locVal");
+        lv.innerHTML = ""; lv.appendChild(b1);
+        gpsReady = true; tryEnableSubmit();
+      },
+      err => {
+        lat = "DENIED"; lng = "DENIED";
+        const b2 = document.createElement("span");
+        b2.className = "badge badge-red";
+        b2.textContent = "⚠️ Denied — logging without GPS";
+        const lv2 = document.getElementById("locVal");
+        lv2.innerHTML = ""; lv2.appendChild(b2);
+        gpsReady = true; tryEnableSubmit();
+      },
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
+    );
+  } else {
+    lat = "N/A"; lng = "N/A";
+    const b3 = document.createElement("span");
+    b3.className = "badge badge-red";
+    b3.textContent = "⚠️ GPS not supported";
+    const lv3 = document.getElementById("locVal");
+    lv3.innerHTML = ""; lv3.appendChild(b3);
+    gpsReady = true; tryEnableSubmit();
+  }
+
+  // Enable button only when GPS is done
+  function tryEnableSubmit() {
+    if (!gpsReady) return;
+    const btn = document.getElementById("submitBtn");
+    btn.disabled = false;
+    btn.textContent = "✅ Submit Attendance";
+  }
+
+  function submitAttendance() {
+    const name = document.getElementById("nameInput").value.trim();
+    if (!name) {
+      document.getElementById("nameInput").focus();
+      document.getElementById("nameInput").style.borderColor = "#ef4444";
+      showResult("error", "❌ Please enter your full name before submitting.");
+      return;
+    }
+
+    // Block if token missing/expired
+    if (!sessionToken) {
+      showSessionExpired("⏱️ Session expired. Please scan the QR code again.");
+      return;
+    }
+
+    // Block submission if GPS was denied — required for fence check
+    if (lat === "DENIED" || lat === "N/A" || lat === null) {
+      showResult("error", "❌ Location access is required to check in.\nPlease enable GPS and reload the page.");
+      return;
+    }
+
+    document.getElementById("nameInput").style.borderColor = "#e0e0f0";
+    const btn = document.getElementById("submitBtn");
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span>Checking…';
+
+    // Step 1: Duplicate pre-check via POST
+    const checkFd = new FormData();
+    checkFd.append("action", "check");
+    checkFd.append("name",   name);
+    checkFd.append("qrId",   qrId);
+
+    fetch(APPS_SCRIPT_URL, { method: "POST", body: checkFd })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (data.status === "duplicate") {
+          btn.disabled = false;
+          btn.textContent = "✅ Submit Attendance";
+          showResult("warning",
+            "⚠️ Duplicate scan blocked!\n\n" +
+            "👤 " + name + " already checked in here within the last hour.\n\n" +
+            "🕐 Previous scan: " + data.lastScan + "\n" +
+            "⏳ Try again after: " + data.nextAllowed
+          );
+          return;
+        }
+
+        // Step 2: Submit — GPS fence is checked server-side inside doPost
+        btn.innerHTML = '<span class="spinner"></span>Verifying location & logging…';
+
+        const form = document.createElement("form");
+        form.method = "POST"; form.action = APPS_SCRIPT_URL;
+        form.target = "hiddenFrame"; form.style.display = "none";
+
+        // Check token still valid before submitting
+        if (!sessionToken) {
+          btn.disabled = false;
+          btn.textContent = "✅ Submit Attendance";
+          showSessionExpired("⏱️ Session expired. Please scan the QR code again.");
+          return;
+        }
+
+        const fields = {
+          qrId: qrId, name: name,
+          timestamp: now.toISOString(),
+          lat: lat, lng: lng,
+          device: navigator.userAgent,
+          token: sessionToken
+        };
+
+        Object.entries(fields).forEach(function(entry) {
+          const input = document.createElement("input");
+          input.type = "hidden"; input.name = entry[0]; input.value = entry[1];
+          form.appendChild(input);
+        });
+
+        document.body.appendChild(form);
+        form.submit();
+        document.body.removeChild(form);
+
+        // Wait for Apps Script to process, then verify via POST
+        setTimeout(function() {
+          const verifyFd = new FormData();
+          verifyFd.append("action", "check");
+          verifyFd.append("name",   name);
+          verifyFd.append("qrId",   qrId);
+
+          fetch(APPS_SCRIPT_URL, { method: "POST", body: verifyFd })
+            .then(function(r) { return r.json(); })
+            .then(function(verify) {
+              if (verify.status === "duplicate") {
+                // Entry was written — confirmed success
+                btn.textContent = "✅ Logged!";
+                showResult("success",
+                  "✅ Attendance logged successfully!\n\n" +
+                  "👤 Name: " + name + "\n" +
+                  "📌 QR ID: " + qrId + "\n" +
+                  "🕐 Time: " + now.toLocaleString() + "\n" +
+                  "📍 Location: " + lat + ", " + lng
+                );
+              } else if (verify.status === "token_error") {
+                showSessionExpired("🔒 " + (verify.message || "Session invalid. Please scan the QR code again."));
+              } else if (verify.status === "fence") {
+                btn.disabled = false;
+                btn.textContent = "✅ Submit Attendance";
+                showResult("error",
+                  "❌ Location check failed!\n\n" +
+                  "📍 You are " + (verify.distance || "?") + "m away from this location.\n" +
+                  "✅ Must be within 50m to check in.\n\n" +
+                  "Make sure you are physically at the location."
+                );
+              } else {
+                btn.disabled = false;
+                btn.textContent = "✅ Submit Attendance";
+                showResult("error",
+                  "❌ Check-in rejected.\n\n" +
+                  "📍 Your GPS does not match this location.\n" +
+                  "You must be physically present to check in."
+                );
+              }
+            })
+            .catch(function() {
+              // Can't verify — show optimistic success
+              btn.textContent = "✅ Logged!";
+              showResult("success",
+                "✅ Attendance submitted!\n\n" +
+                "👤 Name: " + name + "\n" +
+                "📌 QR ID: " + qrId + "\n" +
+                "🕐 Time: " + now.toLocaleString() + "\n" +
+                "📍 Location: " + lat + ", " + lng
+              );
+            });
+        }, 3000);
+      })
+      .catch(function(err) {
+        btn.disabled = false;
+        btn.textContent = "✅ Submit Attendance";
+        showResult("error", "❌ Network error. Please check your connection and try again.");
+      });
+  }
+
+  function showResult(type, msg) {
+    const box = document.getElementById("resultBox");
+    box.className = "result-box " + type;
+    box.textContent = msg;
+  }
+</script>
+</body>
+</html>
