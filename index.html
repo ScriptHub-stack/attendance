@@ -130,7 +130,7 @@
   // ══════════════════════════════════════════════════════════════
   //  🔴 Replace with your Google Apps Script Web App URL
   // ══════════════════════════════════════════════════════════════
-  const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxHrPVknMiaoc04vQIiRIvY6vFDhmKpVi4ym0USx21c9PusdyPkhbRMNLbsiDNU63NaGg/exec";
+  const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwW8spSbF1pwAqsv-vF4bLMM7nM346r3ADZ1csxb8o3aKpu8txNw4Oq9OK0OrAU-fL2Xg/exec";
   // ══════════════════════════════════════════════════════════════
 
   const params = new URLSearchParams(window.location.search);
@@ -148,17 +148,11 @@
   document.getElementById("devVal").textContent =
     navigator.userAgent.substring(0, 80) + "…";
 
-  // ── Fetch session token immediately on page load ──────────
-  fetchSessionToken();
+  // ── Fetch session token on page load (small delay so GPS starts first) ──
+  setTimeout(fetchSessionToken, 500);
 
   function fetchSessionToken() {
-    // Use POST — GET parameters get stripped by Google's redirect
-    const fd = new FormData();
-    fd.append("action", "token");
-    fd.append("qrId",   qrId);
-
-    fetch(APPS_SCRIPT_URL, { method: "POST", body: fd })
-      .then(function(r) { return r.json(); })
+    postToScript({ action: "token", qrId: qrId })
       .then(function(data) {
         if (data.status === "ok") {
           sessionToken   = data.token;
@@ -168,7 +162,7 @@
           showSessionExpired("❌ " + (data.message || "Invalid QR code. Please scan a valid QR code."));
         }
       })
-      .catch(function() {
+      .catch(function(err) {
         showSessionExpired("❌ Could not connect to server. Please check your connection.");
       });
   }
@@ -251,6 +245,17 @@
     btn.textContent = "✅ Submit Attendance";
   }
 
+  // ── Helper: POST JSON to Apps Script (avoids CORS/redirect issues) ──
+  function postToScript(data) {
+    return fetch(APPS_SCRIPT_URL, {
+      method:  "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body:    Object.keys(data).map(function(k) {
+                 return encodeURIComponent(k) + "=" + encodeURIComponent(data[k]);
+               }).join("&")
+    }).then(function(r) { return r.json(); });
+  }
+
   function submitAttendance() {
     const name = document.getElementById("nameInput").value.trim();
     if (!name) {
@@ -277,14 +282,9 @@
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner"></span>Checking…';
 
-    // Step 1: Duplicate pre-check via POST
-    const checkFd = new FormData();
-    checkFd.append("action", "check");
-    checkFd.append("name",   name);
-    checkFd.append("qrId",   qrId);
-
-    fetch(APPS_SCRIPT_URL, { method: "POST", body: checkFd })
-      .then(function(r) { return r.json(); })
+    // Step 1: Duplicate pre-check
+    postToScript({ action: "check", name: name, qrId: qrId })
+      .then(function(r) { return Promise.resolve(r); })
       .then(function(data) {
         if (data.status === "duplicate") {
           btn.disabled = false;
@@ -331,15 +331,10 @@
         form.submit();
         document.body.removeChild(form);
 
-        // Wait for Apps Script to process, then verify via POST
+        // Wait for Apps Script to process, then verify
         setTimeout(function() {
-          const verifyFd = new FormData();
-          verifyFd.append("action", "check");
-          verifyFd.append("name",   name);
-          verifyFd.append("qrId",   qrId);
-
-          fetch(APPS_SCRIPT_URL, { method: "POST", body: verifyFd })
-            .then(function(r) { return r.json(); })
+          postToScript({ action: "check", name: name, qrId: qrId })
+            .then(function(r) { return Promise.resolve(r); })
             .then(function(verify) {
               if (verify.status === "duplicate") {
                 // Entry was written — confirmed success
